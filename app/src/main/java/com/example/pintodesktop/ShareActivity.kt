@@ -13,8 +13,13 @@ import android.support.v7.app.AppCompatActivity
 import android.support.v7.widget.DividerItemDecoration
 import android.support.v7.widget.LinearLayoutManager
 import android.support.v7.widget.RecyclerView
+import android.util.Patterns
 import android.view.LayoutInflater
 import android.widget.Button
+import android.widget.Toast
+import com.example.pintodesktop.support.Absent
+import com.example.pintodesktop.support.Optional
+import com.example.pintodesktop.support.Present
 import java.util.*
 
 class ShareActivity : AppCompatActivity() {
@@ -28,7 +33,7 @@ class ShareActivity : AppCompatActivity() {
         setContentView(R.layout.activity_share)
 
         val appList = findViewById<RecyclerView>(R.id.app_list)
-        adapter = AppListAdapter(android.view.LayoutInflater.from(this))
+        adapter = AppListAdapter(LayoutInflater.from(this))
         appList.adapter = adapter
         appList.addItemDecoration(DividerItemDecoration(this, DividerItemDecoration.HORIZONTAL))
         appList.layoutManager = LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false)
@@ -39,36 +44,55 @@ class ShareActivity : AppCompatActivity() {
     override fun onStart() {
         super.onStart()
 
-        val stringExtra = intent.getStringExtra(Intent.EXTRA_TEXT)
+        val url = intent.getStringExtra(Intent.EXTRA_TEXT)
+                .findUrl()
+                .map { Uri.parse(it) }
 
-        val packageManager = packageManager
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(stringExtra))
-        val queryIntentActivities = packageManager.queryIntentActivities(intent, 0)
-        val viewModels = queryIntentActivities
-                .map {
-                    AppListAdapter.AppViewModel(
-                            it.loadIcon(packageManager),
-                            it.loadLabel(packageManager)
-                    )
-                }
-
-
-
-        adapter.updateWith(viewModels)
-
-        saveButton.setOnClickListener {
-            if (!ShortcutManagerCompat.isRequestPinShortcutSupported(this) || queryIntentActivities.isEmpty()) {
-                return@setOnClickListener
+        when (url) {
+            is Absent -> {
+                Toast.makeText(this, "Unsupported :(((", Toast.LENGTH_SHORT).show()
+                finish()
             }
+            is Present -> {
+                val packageManager = packageManager
+                val intent = Intent(Intent.ACTION_VIEW, url.value)
+                val queryIntentActivities = packageManager.queryIntentActivities(intent, 0)
+                val viewModels = queryIntentActivities
+                        .map {
+                            AppListAdapter.AppViewModel(
+                                    it.loadIcon(packageManager),
+                                    it.loadLabel(packageManager)
+                            )
+                        }
 
 
-            val shortcut = ShortcutInfoCompat.Builder(this, UUID.randomUUID().toString())
-                    .setIntent(intent)
-                    .setIcon(IconCompat.createWithBitmap(queryIntentActivities.first().loadIcon(packageManager).toBitmap()))
-                    .setShortLabel("Coso")
-                    .build()
+                adapter.updateWith(viewModels)
 
-            ShortcutManagerCompat.requestPinShortcut(this, shortcut, null)
+                saveButton.setOnClickListener {
+                    if (!ShortcutManagerCompat.isRequestPinShortcutSupported(this) || queryIntentActivities.isEmpty()) {
+                        return@setOnClickListener
+                    }
+
+                    val shortcut = ShortcutInfoCompat.Builder(this, UUID.randomUUID().toString())
+                            .setIntent(intent)
+                            .setIcon(IconCompat.createWithBitmap(queryIntentActivities.first().loadIcon(packageManager).toBitmap()))
+                            .setShortLabel("Coso")
+                            .build()
+
+                    ShortcutManagerCompat.requestPinShortcut(this, shortcut, null)
+                    finish()
+                }
+            }
+        }
+    }
+
+    private fun String.findUrl(): Optional<String> {
+        val matcher = Patterns.WEB_URL.matcher(this)
+        if (matcher.find()) {
+            val url = substring(matcher.start(), matcher.end())
+            return Present(url)
+        } else {
+            return Absent.absent()
         }
     }
 
